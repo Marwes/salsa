@@ -9,6 +9,7 @@ use crate::QueryTable;
 use crate::QueryTableMut;
 use crate::RuntimeId;
 use crate::SweepStrategy;
+use futures::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -36,17 +37,17 @@ pub trait DatabaseStorageTypes: Sized {
     /// At runtime, it can be implemented in various ways: a monster enum
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
-    type DatabaseKey: DatabaseKey<Self>;
+    type DatabaseKey: DatabaseKey<Self> + Send + Sync;
 
     /// An associated type that contains all the query keys/values
     /// that can appear in the database. This is used as part of the
     /// slot mechanism to determine when database handles are
     /// send/sync/'static.
-    type DatabaseData;
+    type DatabaseData: Send + Sync;
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
-    type DatabaseStorage: Default;
+    type DatabaseStorage: Default + Send + Sync;
 }
 
 /// Internal operations that the runtime uses to operate on the database.
@@ -65,9 +66,13 @@ pub trait QueryStorageMassOps<DB: Database> {
 
 pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
-pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
-    fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+pub trait QueryFunction<'f, DB: Database>: Query<DB> {
+    /// The future type returned by executing this query
+    type Future: std::future::Future<Output = Self::Value> + Send + 'f;
+
+    fn execute(db: &'f mut DB, key: Self::Key) -> Self::Future;
+
+    fn recover(db: &mut DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }
@@ -142,6 +147,7 @@ where
     fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
+#[async_trait::async_trait]
 pub trait QueryStorageOps<DB, Q>: Default
 where
     Self: QueryStorageMassOps<DB>,
@@ -155,7 +161,13 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+    async fn try_fetch(
+        &self,
+        db: &mut DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+
+    fn peek(&self, db: &DB, key: &Q::Key) -> Option<Q::Value>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
@@ -197,4 +209,50 @@ where
     Q: Query<DB>,
 {
     fn invalidate(&self, db: &mut DB, key: &Q::Key);
+}
+
+/// Calls a future synchronously without an actual way to resume to future.
+pub(crate) fn sync_future<F>(mut f: F) -> F::Output
+where
+    F: Future,
+{
+    use std::{
+        pin::Pin,
+        sync::{Condvar, Mutex},
+    };
+
+    use futures::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    unsafe {
+        type WakerState = Condvar;
+
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |p| RawWaker::new(p, &VTABLE),
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |_| (),
+        );
+
+        let waker_state = WakerState::new();
+        let waker = Waker::from_raw(RawWaker::new(
+            &waker_state as *const WakerState as *const (),
+            &VTABLE,
+        ));
+        let mut context = Context::from_waker(&waker);
+
+        let mutex = Mutex::new(());
+        let mut guard = mutex.lock().unwrap();
+        loop {
+            match Pin::new_unchecked(&mut f).poll(&mut context) {
+                Poll::Ready(x) => break x,
+                Poll::Pending => {
+                    guard = waker_state.wait(guard).unwrap();
+                }
+            }
+        }
+    }
 }

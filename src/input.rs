@@ -69,12 +69,17 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &mut DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -85,10 +90,18 @@ where
             changed_at,
         } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, durability, changed_at);
 
         Ok(value)
+    }
+
+    fn peek(&self, _db: &DB, key: &Q::Key) -> Option<Q::Value> {
+        let slot = self.slot(key)?;
+
+        let StampedValue { value, .. } = slot.stamped_value.read().clone();
+
+        Some(value)
     }
 
     fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
@@ -201,12 +214,13 @@ where
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
+#[async_trait::async_trait]
 unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
 {
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, _db: &mut DB, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,

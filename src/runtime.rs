@@ -3,7 +3,7 @@ use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
+use crate::{Database, Event, EventKind, ForkState, SweepStrategy};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 
 mod local_state;
-use local_state::LocalState;
+use local_state::{ActiveQueryGuard, LocalState};
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -37,8 +37,21 @@ pub struct Runtime<DB: Database> {
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState<DB>,
 
+    pub(super) parent: Option<ForkState<DB>>,
+
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
+}
+
+impl<DB> Drop for Runtime<DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        if self.parent.is_some() {
+            self.unblock_queries_blocked_on_self(None);
+        }
+    }
 }
 
 impl<DB> Default for Runtime<DB>
@@ -51,6 +64,7 @@ where
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
+            parent: Default::default(),
         }
     }
 }
@@ -113,6 +127,31 @@ where
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
+            parent: self.parent.clone(),
+        }
+    }
+
+    /// Returns a "forked" runtime, suitable to call concurrent queries.
+    pub fn fork(&self, from_db: &DB, state: ForkState<DB>) -> Self {
+        assert!(
+            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
+            "invoked `snapshot` with a non-matching database"
+        );
+
+        let revision_guard = RevisionGuard::new(&self.shared_state);
+
+        let id = RuntimeId {
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+        };
+
+        assert!(self.try_block_on_fork(id));
+
+        Runtime {
+            id,
+            revision_guard: Some(revision_guard),
+            shared_state: self.shared_state.clone(),
+            local_state: Default::default(),
+            parent: Some(state),
         }
     }
 
@@ -164,6 +203,15 @@ where
     #[inline]
     pub fn id(&self) -> RuntimeId {
         self.id
+    }
+
+    /// The unique identifier attached to this `SalsaRuntime` and the ids of its parents.
+    /// Each snapshotted runtime has a distinct identifier.
+    pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
+        self.parent
+            .iter()
+            .flat_map(|state| state.0.parents.iter().cloned())
+            .chain(Some(self.id()))
     }
 
     /// Returns the database-key for the query that this thread is
@@ -234,7 +282,7 @@ where
     /// Note that salsa is explicitly designed to be panic-safe, so cancellation
     /// via unwinding is 100% valid approach to cancellation.
     #[inline]
-    pub fn is_current_revision_canceled(&self) -> bool {
+    pub fn is_current_revision_canceled(&mut self) -> bool {
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
@@ -329,13 +377,11 @@ where
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<V>(
-        &self,
-        db: &DB,
+    pub(crate) fn prepare_query_execute<'db>(
+        db: &'db mut DB,
         database_key: &DB::DatabaseKey,
-        execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<DB, V> {
-        debug!("{:?}: execute_query_implementation invoked", database_key);
+    ) -> ActiveQueryGuard<'db, DB> {
+        debug!("{:?}: prepare_query_execute invoked", database_key);
 
         db.salsa_event(|| Event {
             runtime_id: db.salsa_runtime().id(),
@@ -346,27 +392,7 @@ where
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = self.local_state.push_query(database_key, max_durability);
-
-        // Execute user's code, accumulating inputs etc.
-        let value = execute();
-
-        // Extract accumulated inputs.
-        let ActiveQuery {
-            dependencies,
-            changed_at,
-            durability,
-            cycle,
-            ..
-        } = active_query.complete();
-
-        ComputedQueryResult {
-            value,
-            durability,
-            changed_at,
-            dependencies,
-            cycle,
-        }
+        LocalState::push_query(db, database_key, max_durability)
     }
 
     /// Reports that the currently active query read the result from
@@ -378,7 +404,7 @@ where
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
     pub(crate) fn report_query_read<'hack>(
-        &self,
+        &mut self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
         durability: Durability,
         changed_at: Revision,
@@ -392,7 +418,7 @@ where
     ///
     /// Queries which report untracked reads will be re-executed in the next
     /// revision.
-    pub fn report_untracked_read(&self) {
+    pub fn report_untracked_read(&mut self) {
         self.local_state
             .report_untracked_read(self.current_revision());
     }
@@ -400,7 +426,7 @@ where
     /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
     ///
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
-    pub fn report_synthetic_read(&self, durability: Durability) {
+    pub fn report_synthetic_read(&mut self, durability: Durability) {
         self.local_state.report_synthetic_read(durability);
     }
 
@@ -412,32 +438,32 @@ where
     /// actual *data*.)
     ///
     /// This is used when queries check if they have been canceled.
-    fn report_anon_read(&self, revision: Revision) {
+    fn report_anon_read(&mut self, revision: Revision) {
         self.local_state.report_anon_read(revision)
     }
 
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
-        &self,
+        &mut self,
         database_key: &DB::DatabaseKey,
         error: CycleDetected,
         changed_at: Revision,
     ) -> crate::CycleError<DB::DatabaseKey> {
         debug!("report_unexpected_cycle(database_key={:?})", database_key);
 
-        let mut query_stack = self.local_state.borrow_query_stack_mut();
+        let query_stack = self.local_state.borrow_query_stack_mut();
 
         if error.from == error.to {
             // All queries in the cycle is local
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key == *database_key)
-                .unwrap();
-            let mut cycle = Vec::new();
+                .expect("bug: query is not on the stack");
             let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key.clone());
-            }
+            let cycle: Vec<_> = cycle_participants
+                .iter()
+                .map(|active_query| active_query.database_key.clone())
+                .collect();
 
             assert!(!cycle.is_empty());
 
@@ -487,24 +513,26 @@ where
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+    pub(crate) fn mark_cycle_participants(&mut self, cycle: &[DB::DatabaseKey]) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
-            .take_while(|active_query| err.cycle.iter().any(|e| *e == active_query.database_key))
+            .take_while(|active_query| cycle.iter().any(|e| *e == active_query.database_key))
         {
-            active_query.cycle = err.cycle.clone();
+            active_query.cycle = cycle.to_owned();
         }
     }
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
     pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
-        self.shared_state.dependency_graph.lock().add_edge(
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        graph.add_edge(
             self.id(),
-            database_key,
+            Some(database_key),
             other_id,
             self.local_state
                 .borrow_query_stack()
@@ -513,11 +541,24 @@ where
         )
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
-        self.shared_state
-            .dependency_graph
-            .lock()
-            .remove_edge(database_key, self.id())
+    pub(crate) fn try_block_on_fork(&self, other_id: RuntimeId) -> bool {
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        graph.add_edge(
+            self.id(),
+            None,
+            other_id,
+            self.local_state
+                .borrow_query_stack()
+                .iter()
+                .map(|query| query.database_key.clone()),
+        )
+    }
+
+    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: Option<&DB::DatabaseKey>) {
+        let mut graph = self.shared_state.dependency_graph.lock();
+        let id = self.id();
+        graph.remove_edge(database_key, id);
     }
 }
 
@@ -718,8 +759,9 @@ pub struct RuntimeId {
     counter: u64,
 }
 
+#[doc(hidden)]
 #[derive(Clone, Debug)]
-pub(crate) struct StampedValue<V> {
+pub struct StampedValue<V> {
     pub(crate) value: V,
     pub(crate) durability: Durability,
     pub(crate) changed_at: Revision,
@@ -737,8 +779,9 @@ struct DependencyGraph<K: Hash + Eq> {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, Edge<K>>,
+    edges: FxHashMap<RuntimeId, SmallVec<[Edge<K>; 1]>>,
     labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
+    forks: FxHashMap<RuntimeId, SmallVec<[RuntimeId; 4]>>,
 }
 
 impl<K> Default for DependencyGraph<K>
@@ -749,6 +792,7 @@ where
         DependencyGraph {
             edges: Default::default(),
             labels: Default::default(),
+            forks: Default::default(),
         }
     }
 }
@@ -757,48 +801,58 @@ impl<K> DependencyGraph<K>
 where
     K: Hash + Eq + Clone,
 {
+    fn can_add_edge(&self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+        // First: walk the chain of things that `to_id` depends on,
+        // looking for us.
+        if from_id == to_id {
+            return false;
+        }
+        if let Some(qs) = self.edges.get(&to_id) {
+            return qs.iter().all(|q| self.can_add_edge(from_id, q.id));
+        }
+        true
+    }
+
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: &K,
+        database_key: Option<&K>,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = K>,
     ) -> bool {
         assert_ne!(from_id, to_id);
-        debug_assert!(!self.edges.contains_key(&from_id));
 
-        // First: walk the chain of things that `to_id` depends on,
-        // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
+        if !self.can_add_edge(from_id, to_id) {
+            return false;
         }
 
-        self.edges.insert(
-            from_id,
-            Edge {
-                id: to_id,
-                path: path.into_iter().chain(Some(database_key.clone())).collect(),
-            },
-        );
-        self.labels
-            .entry(database_key.clone())
-            .or_default()
-            .push(from_id);
+        self.edges.entry(from_id).or_default().push(Edge {
+            id: to_id,
+            path: path.into_iter().chain(database_key.cloned()).collect(),
+        });
+
+        if let Some(database_key) = database_key.cloned() {
+            self.labels.entry(database_key).or_default().push(from_id);
+        } else {
+            self.forks.entry(to_id).or_default().push(from_id);
+        }
         true
     }
 
-    fn remove_edge(&mut self, database_key: &K, to_id: RuntimeId) {
-        let vec = self.labels.remove(database_key).unwrap_or_default();
+    fn remove_edge(&mut self, database_key: Option<&K>, to_id: RuntimeId) {
+        let vec = match database_key {
+            Some(database_key) => self.labels.remove(database_key).unwrap_or_default(),
+            None => self.forks.remove(&to_id).unwrap_or_default(),
+        };
 
         for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
-            assert_eq!(Some(to_id), to_id1);
+            let edges = self.edges.get_mut(from_id).expect("remove_edge");
+            let i = edges
+                .iter()
+                .position(|edge| edge.id == to_id)
+                .expect("Tried to remove edge which did not exist in the edge list");
+            edges.swap_remove(i);
         }
     }
 
@@ -818,8 +872,16 @@ where
             Some((id, path)) => {
                 let link_key = path.last().unwrap();
 
-                current = self.edges.get(&id).map(|edge| {
-                    let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                current = self.edges.get(&id).map(|out_edges| {
+                    let (edge, i) = out_edges
+                        .iter()
+                        .find_map(|edge| {
+                            edge.path
+                                .iter()
+                                .rposition(|p| p == link_key)
+                                .map(|i| (edge, i))
+                        })
+                        .unwrap();
                     (edge.id, &edge.path[i + 1..])
                 });
 
@@ -900,7 +962,7 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, &2, b, vec![1]));
+        assert!(graph.add_edge(a, Some(&2), b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
         assert_eq!(
             graph
@@ -917,8 +979,8 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, &3, b, vec![1]));
-        assert!(graph.add_edge(b, &4, c, vec![2, 3]));
+        assert!(graph.add_edge(a, Some(&3), b, vec![1]));
+        assert!(graph.add_edge(b, Some(&4), c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
         assert_eq!(
             graph

@@ -314,19 +314,28 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<DB, Q> QueryStorageOps<DB, Q> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
     Q::Value: InternKey,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &mut DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, INTERN_DURABILITY, changed_at);
         Ok(<Q::Value>::from_intern_id(index))
+    }
+
+    fn peek(&self, _db: &DB, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
     }
 
     fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
@@ -403,11 +412,12 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<DB, Q, IQ> QueryStorageOps<DB, Q> for LookupInternedStorage<DB, Q, IQ>
 where
     Q: Query<DB>,
     Q::Key: InternKey,
-    Q::Value: Eq + Hash,
+    Q::Value: Eq + Hash + Send + Sync,
     IQ: Query<
         DB,
         Key = Q::Value,
@@ -419,16 +429,24 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &mut DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
         let slot = interned_storage.lookup_value(db, index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, INTERN_DURABILITY, interned_at);
         Ok(value)
+    }
+
+    fn peek(&self, _db: &DB, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
     }
 
     fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
@@ -527,12 +545,13 @@ impl<K> Slot<K> {
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
+#[async_trait::async_trait]
 unsafe impl<DB, K> DatabaseSlot<DB> for Slot<K>
 where
     DB: Database,
-    K: Debug,
+    K: Debug + Send + Sync,
 {
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool {
         let revision_now = db.salsa_runtime().current_revision();
         if !self.try_update_accessed_at(revision_now) {
             // if we failed to update accessed-at, then this slot was garbage collected

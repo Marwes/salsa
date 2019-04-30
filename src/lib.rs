@@ -32,7 +32,9 @@ use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+pub use futures;
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -40,10 +42,14 @@ pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
+#[doc(hidden)]
+pub type BoxFutureLocal<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps + Send + Sync {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
@@ -371,6 +377,86 @@ pub trait ParallelDatabase: Database + Send {
     /// }
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
+
+    /// Returns a `Snapshot` which can be used to run a query concurrently
+    fn fork(&self, state: ForkState<Self>) -> Snapshot<Self>;
+
+    /// Returns a [`Forker`] object which can be used to fork new `DB` references that are able to
+    /// query the database concurrently. All queries run this way must complete before the
+    /// [`Forker`] object goes out of scope or its `Drop` impl will panic.
+    fn forker(&mut self) -> Forker<'_, Self> {
+        let runtime = self.salsa_runtime();
+        Forker {
+            state: ForkState(Arc::new(ForkStateInner {
+                parents: runtime
+                    .parent
+                    .iter()
+                    .flat_map(|state| state.0.parents.iter())
+                    .cloned()
+                    .chain(Some(runtime.id()))
+                    .collect(),
+                cycle: Default::default(),
+            })),
+            db: self,
+        }
+    }
+}
+
+/// Returned from calling [`ParallelDatabase::forker`]. Used to fork on a database so that
+/// multiple queries can run concurrently
+pub struct Forker<'a, DB>
+where
+    DB: Database,
+{
+    /// The database
+    pub db: &'a mut DB,
+    /// The state used to tracked forked queries
+    pub state: ForkState<DB>,
+}
+
+///
+pub struct ForkState<DB: Database>(Arc<ForkStateInner<DB>>);
+
+struct ForkStateInner<DB: Database> {
+    parents: Vec<RuntimeId>,
+    cycle: Mutex<Vec<DB::DatabaseKey>>,
+}
+
+impl<DB: Database> Clone for ForkState<DB> {
+    fn clone(&self) -> Self {
+        ForkState(self.0.clone())
+    }
+}
+
+impl<DB> Drop for Forker<'_, DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let cycle = std::mem::replace(
+                Arc::get_mut(&mut self.state.0)
+                    .expect("Forker dropped before joining forked databases!")
+                    .cycle
+                    .get_mut()
+                    .unwrap(),
+                Vec::new(),
+            );
+            if !cycle.is_empty() {
+                self.db.salsa_runtime_mut().mark_cycle_participants(&cycle);
+            }
+        }
+    }
+}
+
+impl<DB> Forker<'_, DB>
+where
+    DB: ParallelDatabase,
+{
+    /// Returns a `Snapshot` which can be used to run a query concurrently
+    pub fn fork(&self) -> Snapshot<DB> {
+        self.db.fork(self.state.clone())
+    }
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
@@ -391,8 +477,7 @@ where
     DB: ParallelDatabase,
 {
     /// Creates a `Snapshot` that wraps the given database handle
-    /// `db`. From this point forward, only shared references to `db`
-    /// will be possible.
+    /// `db`.
     pub fn new(db: DB) -> Self {
         Snapshot { db }
     }
@@ -409,6 +494,15 @@ where
     }
 }
 
+impl<DB> std::ops::DerefMut for Snapshot<DB>
+where
+    DB: ParallelDatabase,
+{
+    fn deref_mut(&mut self) -> &mut DB {
+        &mut self.db
+    }
+}
+
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
 ///
@@ -417,13 +511,15 @@ where
 /// In particular, `Group::GroupData: Send + Sync` must imply that
 /// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
 /// by the dependency tracking logic.
-pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub unsafe trait Query<DB: Database>:
+    Debug + Default + Send + Sync + Sized + 'static
+{
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
-    type Key: Clone + Debug + Hash + Eq;
+    type Key: Clone + Debug + Hash + Eq + Send + Sync;
 
     /// What value does the query return?
-    type Value: Clone + Debug;
+    type Value: Clone + Debug + Send + Sync;
 
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self>;
@@ -471,16 +567,10 @@ where
         Self { db, storage }
     }
 
-    /// Execute the query on a given input. Usually it's easier to
-    /// invoke the trait method directly. Note that for variadic
-    /// queries (those with no inputs, or those with more than one
-    /// input) the key will be a tuple.
-    pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
-    }
-
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        self.storage.try_fetch(self.db, &key)
+    /// Peeks at the value at `Q::Key`. If it is currently in cache then it returns
+    /// `Some`, otherwise `None`
+    pub fn peek(&self, key: &Q::Key) -> Option<Q::Value> {
+        self.storage.peek(self.db, key)
     }
 
     /// Remove all values for this query that have not been used in
@@ -519,6 +609,28 @@ where
 
     fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
         <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
+    }
+
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub fn get(&mut self, key: Q::Key) -> Q::Value {
+        crate::plumbing::sync_future(self.try_get(key)).unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub async fn get_async(&mut self, key: Q::Key) -> Q::Value {
+        self.try_get(key)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    async fn try_get(&mut self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+        self.storage.try_fetch(self.db, &key).await
     }
 
     /// Assign a value to an "input query". Must be used outside of

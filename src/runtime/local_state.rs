@@ -3,7 +3,6 @@ use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
 use crate::Database;
-use std::cell::{Ref, RefCell, RefMut};
 
 /// State that is specific to a single execution thread.
 ///
@@ -16,7 +15,7 @@ pub(super) struct LocalState<DB: Database> {
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Vec<ActiveQuery<DB>>>,
+    query_stack: Vec<ActiveQuery<DB>>,
 }
 
 impl<DB: Database> Default for LocalState<DB> {
@@ -28,17 +27,17 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(
-        &self,
+    pub(super) fn push_query<'db>(
+        db: &'db mut DB,
         database_key: &DB::DatabaseKey,
         max_durability: Durability,
-    ) -> ActiveQueryGuard<'_, DB> {
-        let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
-        ActiveQueryGuard {
-            local_state: self,
-            push_len: query_stack.len(),
-        }
+    ) -> ActiveQueryGuard<'db, DB> {
+        let push_len = {
+            let query_stack = &mut db.salsa_runtime_mut().local_state.query_stack;
+            query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
+            query_stack.len()
+        };
+        ActiveQueryGuard { db, push_len }
     }
 
     /// Returns a reference to the active query stack.
@@ -46,50 +45,49 @@ impl<DB: Database> LocalState<DB> {
     /// **Warning:** Because this reference holds the ref-cell lock,
     /// you should not use any mutating methods of `LocalState` while
     /// reading from it.
-    pub(super) fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery<DB>>> {
-        self.query_stack.borrow()
+    pub(super) fn borrow_query_stack(&self) -> &Vec<ActiveQuery<DB>> {
+        &self.query_stack
     }
 
-    pub(super) fn borrow_query_stack_mut(&self) -> RefMut<'_, Vec<ActiveQuery<DB>>> {
-        self.query_stack.borrow_mut()
+    pub(super) fn borrow_query_stack_mut(&mut self) -> &mut Vec<ActiveQuery<DB>> {
+        &mut self.query_stack
     }
 
     pub(super) fn query_in_progress(&self) -> bool {
-        !self.query_stack.borrow().is_empty()
+        !self.query_stack.is_empty()
     }
 
     pub(super) fn active_query(&self) -> Option<DB::DatabaseKey> {
         self.query_stack
-            .borrow()
             .last()
             .map(|active_query| active_query.database_key.clone())
     }
 
     pub(super) fn report_query_read(
-        &self,
+        &mut self,
         dependency: Dependency<DB>,
         durability: Durability,
         changed_at: Revision,
     ) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+        if let Some(top_query) = self.query_stack.last_mut() {
             top_query.add_read(dependency, durability, changed_at);
         }
     }
 
-    pub(super) fn report_untracked_read(&self, current_revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+    pub(super) fn report_untracked_read(&mut self, current_revision: Revision) {
+        if let Some(top_query) = self.query_stack.last_mut() {
             top_query.add_untracked_read(current_revision);
         }
     }
 
-    pub(super) fn report_synthetic_read(&self, durability: Durability) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+    pub(super) fn report_synthetic_read(&mut self, durability: Durability) {
+        if let Some(top_query) = self.query_stack.last_mut() {
             top_query.add_synthetic_read(durability);
         }
     }
 
-    pub(super) fn report_anon_read(&self, revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+    pub(super) fn report_anon_read(&mut self, revision: Revision) {
+        if let Some(top_query) = self.query_stack.last_mut() {
             top_query.add_anon_read(revision);
         }
     }
@@ -101,8 +99,8 @@ impl<DB> std::panic::RefUnwindSafe for LocalState<DB> where DB: Database {}
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me, DB: Database> {
-    local_state: &'me LocalState<DB>,
+pub(crate) struct ActiveQueryGuard<'me, DB: Database> {
+    pub(crate) db: &'me mut DB,
     push_len: usize,
 }
 
@@ -110,8 +108,8 @@ impl<'me, DB> ActiveQueryGuard<'me, DB>
 where
     DB: Database,
 {
-    fn pop_helper(&self) -> ActiveQuery<DB> {
-        let mut query_stack = self.local_state.query_stack.borrow_mut();
+    fn pop_helper(&mut self) -> ActiveQuery<DB> {
+        let query_stack = &mut self.db.salsa_runtime_mut().local_state.query_stack;
 
         // Sanity check: pushes and pops should be balanced.
         assert_eq!(query_stack.len(), self.push_len);
@@ -120,10 +118,28 @@ where
     }
 
     /// Invoked when the query has successfully completed execution.
-    pub(super) fn complete(self) -> ActiveQuery<DB> {
+    pub(super) fn complete(mut self) -> ActiveQuery<DB> {
         let query = self.pop_helper();
         std::mem::forget(self);
         query
+    }
+
+    pub(crate) fn complete_as_computed<V>(self, value: V) -> super::ComputedQueryResult<DB, V> {
+        let ActiveQuery {
+            dependencies,
+            changed_at,
+            durability,
+            cycle,
+            ..
+        } = self.complete();
+
+        super::ComputedQueryResult {
+            value,
+            durability,
+            changed_at,
+            dependencies,
+            cycle,
+        }
     }
 }
 
