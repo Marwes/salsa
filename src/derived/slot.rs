@@ -130,7 +130,7 @@ where
 
     pub(super) async fn read(
         &self,
-        db: &DB,
+        db: &mut DB,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
 
@@ -161,7 +161,7 @@ where
     /// shows a potentially out of date value.
     async fn read_upgrade(
         &self,
-        db: &DB,
+        db: &mut DB,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
@@ -349,7 +349,7 @@ where
         &self,
         db: &DB,
         state: StateGuard,
-        runtime: &Runtime<DB>,
+        runtime: &mut Runtime<DB>,
         revision_now: Revision,
     ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
     where

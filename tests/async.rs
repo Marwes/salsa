@@ -38,3 +38,14 @@ fn basic() {
     query.set_input("c".into(), 3);
     assert_eq!(futures::executor::block_on(query.output("a".into())), 2 + 3);
 }
+
+fn assert_send<T: Send>(t: T) -> T {
+    t
+}
+
+async fn function(_: &AsyncDatabase) {}
+
+#[test]
+fn test_send() {
+    assert_send(function(&AsyncDatabase::default()));
+}

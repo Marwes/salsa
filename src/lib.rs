@@ -72,7 +72,7 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// it's more common to use the trait method on the database
     /// itself.
     #[allow(unused_variables)]
-    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
+    fn query<Q>(&mut self, query: Q) -> QueryTable<'_, Self, Q>
     where
         Q: Query<Self>,
         Self: plumbing::GetQueryTable<Q>,
@@ -462,8 +462,8 @@ where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
-    db: &'me DB,
-    storage: &'me Q::Storage,
+    db: &'me mut DB,
+    storage: Arc<Q::Storage>,
 }
 
 impl<'me, DB, Q> QueryTable<'me, DB, Q>
@@ -472,7 +472,7 @@ where
     Q: Query<DB>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me DB, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me mut DB, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 
@@ -494,7 +494,7 @@ where
             .unwrap_or_else(|err| panic!("{}", err))
     }
 
-    async fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_get(&mut self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         self.storage.try_fetch(self.db, &key).await
     }
 

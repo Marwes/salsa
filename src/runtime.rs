@@ -235,7 +235,7 @@ where
     /// Note that salsa is explicitly designed to be panic-safe, so cancellation
     /// via unwinding is 100% valid approach to cancellation.
     #[inline]
-    pub fn is_current_revision_canceled(&self) -> bool {
+    pub fn is_current_revision_canceled(&mut self) -> bool {
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
@@ -331,7 +331,7 @@ where
     }
 
     pub(crate) async fn execute_query_implementation<'a, V>(
-        &'a self,
+        &'a mut self,
         db: &'a DB,
         database_key: &'a DB::DatabaseKey,
         execute: impl FnOnce() -> V,
@@ -382,7 +382,7 @@ where
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
     pub(crate) fn report_query_read<'hack>(
-        &self,
+        &mut self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
         durability: Durability,
         changed_at: Revision,
@@ -396,7 +396,7 @@ where
     ///
     /// Queries which report untracked reads will be re-executed in the next
     /// revision.
-    pub fn report_untracked_read(&self) {
+    pub fn report_untracked_read(&mut self) {
         self.local_state
             .report_untracked_read(self.current_revision());
     }
@@ -404,7 +404,7 @@ where
     /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
     ///
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
-    pub fn report_synthetic_read(&self, durability: Durability) {
+    pub fn report_synthetic_read(&mut self, durability: Durability) {
         self.local_state.report_synthetic_read(durability);
     }
 
@@ -416,20 +416,20 @@ where
     /// actual *data*.)
     ///
     /// This is used when queries check if they have been canceled.
-    fn report_anon_read(&self, revision: Revision) {
+    fn report_anon_read(&mut self, revision: Revision) {
         self.local_state.report_anon_read(revision)
     }
 
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
-        &self,
+        &mut self,
         database_key: &DB::DatabaseKey,
         error: CycleDetected,
         changed_at: Revision,
     ) -> crate::CycleError<DB::DatabaseKey> {
         debug!("report_unexpected_cycle(database_key={:?})", database_key);
 
-        let mut query_stack = self.local_state.borrow_query_stack_mut();
+        let query_stack = self.local_state.borrow_query_stack_mut();
 
         if error.from == error.to {
             // All queries in the cycle is local
@@ -491,7 +491,7 @@ where
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+    pub(crate) fn mark_cycle_participants(&mut self, err: &CycleError<DB::DatabaseKey>) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
