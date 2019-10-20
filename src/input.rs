@@ -212,7 +212,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    async fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, _db: &mut DB, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,

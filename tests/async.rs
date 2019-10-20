@@ -19,10 +19,10 @@ trait AsyncTrait {
     #[salsa::input]
     fn input(&self, x: String) -> u32;
 
-    async fn output(&self, x: String) -> u32;
+    async fn output(&mut self, x: String) -> u32;
 }
 
-async fn output(db: &impl AsyncTrait, x: String) -> u32 {
+async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {
     if x == "a" {
         let (b, c) = futures::join!(db.output("b".into()), db.output("c".into()));
         b + c

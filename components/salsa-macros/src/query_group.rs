@@ -95,7 +95,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // Extract keys.
                 let mut iter = method.sig.inputs.iter();
                 match iter.next() {
-                    Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
+                    Some(FnArg::Receiver(sr))
+                        if sr.mutability.is_none() == method.sig.asyncness.is_none() =>
+                    {
+                        ()
+                    }
                     _ => panic!(
                         "first argument of query `{}` must be `&self`",
                         method.sig.ident
@@ -208,7 +212,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         if query.is_async {
             query_fn_declarations.extend(quote! {
                 #(#attrs)*
-                fn #fn_name<'s>(&'s self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>>;
+                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>>;
             });
         } else {
             query_fn_declarations.extend(quote! {
@@ -239,9 +243,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         if query.is_async {
             query_fn_definitions.extend(quote! {
-                fn #fn_name<'s>(&'s self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
+                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
                     Box::pin(async move {
-                        <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get_async((#(#key_names),*)).await
+                        <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).get_async((#(#key_names),*)).await
                     })
                 }
             });
@@ -472,7 +476,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
-                    fn execute<'a>(db: &'a DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
+                    fn execute<'a>(db: &'a mut DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
                         -> salsa::BoxFutureLocal<'a, <Self as salsa::Query<DB>>::Value> {
                         Box::pin(#future)
                     }
