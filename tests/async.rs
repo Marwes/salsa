@@ -43,9 +43,9 @@ fn assert_send<T: Send>(t: T) -> T {
     t
 }
 
-async fn function(_: &AsyncDatabase) {}
+async fn function(_: &mut AsyncDatabase) {}
 
 #[test]
 fn test_send() {
-    assert_send(function(&AsyncDatabase::default()));
+    assert_send(function(&mut AsyncDatabase::default()));
 }

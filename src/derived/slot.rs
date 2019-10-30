@@ -10,10 +10,8 @@ use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
 use crate::revision::Revision;
-use crate::runtime::ComputedQueryResult;
 use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
-use crate::runtime::RuntimeId;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
@@ -193,6 +191,7 @@ where
 
         let database_key = self.database_key(db);
         let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, db);
+        let db = &mut *panic_guard.db;
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -203,7 +202,7 @@ where
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(|| Event {
-                    runtime_id: runtime.id(),
+                    runtime_id: db.salsa_runtime().id(),
                     kind: EventKind::DidValidateMemoizedValue {
                         database_key: database_key.clone(),
                     },
@@ -225,43 +224,12 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = {
-            debug!("{:?}: execute_query_implementation invoked", database_key);
-
-            db.salsa_event(|| Event {
-                runtime_id: db.salsa_runtime().id(),
-                kind: EventKind::WillExecute {
-                    database_key: database_key.clone(),
-                },
-            });
-
-            // Push the active query onto the stack.
-            let max_durability = Durability::MAX;
-            let active_query = LocalState::push_query(db, database_key, max_durability);
-
-            // Execute user's code, accumulating inputs etc.
+        let mut result = Runtime::execute_query_implementation(db, &database_key, |db| {
             info!("{:?}: executing query", self);
 
-            let value = Q::execute(db, self.key.clone()).await;
-
-            // Extract accumulated inputs.
-            let ActiveQuery {
-                dependencies,
-                changed_at,
-                durability,
-                cycle,
-                ..
-            } = active_query.complete();
-
-            ComputedQueryResult {
-                value,
-                durability,
-                changed_at,
-                dependencies,
-                cycle,
-            }
-        };
-
+            Q::execute(db, self.key.clone())
+        })
+        .await;
         let runtime = db.salsa_runtime();
 
         if !result.cycle.is_empty() {

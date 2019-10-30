@@ -88,7 +88,7 @@ pub trait QueryFunction<DB: Database>: Query<DB> {
 pub trait GetQueryTable<Q: Query<Self>>: Database {
     /// Create a query table, which has access to the storage for the query
     /// and offers methods like `get`.
-    fn get_query_table(db: &mut Self) -> QueryTable<'_, Self, Q>;
+    fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
 
     /// Create a mutable query table, which has access to the storage
     /// for the query and offers methods like `set`.
@@ -104,9 +104,9 @@ where
     Q: Query<DB>,
     DB: HasQueryGroup<Q::Group>,
 {
-    fn get_query_table(db: &mut DB) -> QueryTable<'_, DB, Q> {
+    fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage).clone();
+        let query_storage: &Q::Storage = Q::query_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
 
