@@ -69,7 +69,7 @@ pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute<'a>(db: &'a mut DB, key: Self::Key) -> BoxFutureLocal<'a, Self::Value>;
-    fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+    fn recover(db: &mut DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }

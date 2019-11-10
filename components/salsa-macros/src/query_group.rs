@@ -95,13 +95,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // Extract keys.
                 let mut iter = method.sig.inputs.iter();
                 match iter.next() {
-                    Some(FnArg::Receiver(sr))
-                        if sr.mutability.is_none() == method.sig.asyncness.is_none() =>
-                    {
-                        ()
-                    }
+                    Some(FnArg::Receiver(sr)) if sr.mutability.is_some() => (),
                     _ => panic!(
-                        "first argument of query `{}` must be `&self`",
+                        "first argument of query `{}` must be `&mut self`",
                         method.sig.ident
                     ),
                 }
@@ -217,7 +213,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         } else {
             query_fn_declarations.extend(quote! {
                 #(#attrs)*
-                fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
+                fn #fn_name(&mut self, #(#key_names: #keys),*) -> #value;
             });
         }
 
@@ -227,13 +223,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let invoke = query.invoke_tt();
             if query.is_async {
                 query_fn_definitions.extend(quote! {
-                    fn #fn_name<'s>(&'s self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
+                    fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
                         Box::pin(#invoke(self, #(#key_names),*))
                     }
                 });
             } else {
                 query_fn_definitions.extend(quote! {
-                    fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                    fn #fn_name(&mut self, #(#key_names: #keys),*) -> #value {
                         #invoke(self, #(#key_names),*)
                     }
                 });
@@ -251,7 +247,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
         } else {
             query_fn_definitions.extend(quote! {
-                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                fn #fn_name(&mut self, #(#key_names: #keys),*) -> #value {
                     <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
                 }
             });
@@ -446,7 +442,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &DB, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
+                    fn recover(db: &mut DB, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
                         -> Option<<Self as salsa::Query<DB>>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,

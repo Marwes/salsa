@@ -132,22 +132,17 @@ where
         &self,
         db: &mut DB,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
-        let runtime = db.salsa_runtime();
-
         // NB: We don't need to worry about people modifying the
         // revision out from under our feet. Either `db` is a frozen
         // database, in which case there is a lock, or the mutator
         // thread is the current thread, and it will be prevented from
         // doing any `set` invocations while the query function runs.
-        let revision_now = runtime.current_revision();
+        let revision_now = db.salsa_runtime().current_revision();
 
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self
-            .probe(db, self.state.read(), runtime, revision_now)
-            .await
-        {
+        match self.probe(db, self.state.read(), revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
@@ -164,8 +159,6 @@ where
         db: &mut DB,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
-        let runtime = db.salsa_runtime();
-
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
 
         // Check with an upgradable read to see if there is a value
@@ -175,12 +168,10 @@ where
         // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
-        let old_memo = match self
-            .probe(db, self.state.write(), runtime, revision_now)
-            .await
-        {
+        let old_memo = match self.probe(db, self.state.write(), revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(mut state) => {
+                let runtime = db.salsa_runtime();
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
@@ -230,7 +221,6 @@ where
             Q::execute(db, self.key.clone())
         })
         .await;
-        let runtime = db.salsa_runtime();
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -246,6 +236,7 @@ where
                 }
             };
         }
+        let runtime = db.salsa_runtime();
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -348,14 +339,14 @@ where
     /// `map` will have been released.
     async fn probe<StateGuard>(
         &self,
-        db: &DB,
+        db: &mut DB,
         state: StateGuard,
-        runtime: &Runtime<DB>,
         revision_now: Revision,
     ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
+        let runtime = db.salsa_runtime();
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
 
