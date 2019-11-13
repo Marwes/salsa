@@ -406,7 +406,7 @@ where
                                 changed_at: result.value.changed_at,
                                 durability: result.value.durability,
                             };
-                            runtime.mark_cycle_participants(&err);
+                            db.salsa_runtime_mut().mark_cycle_participants(&err.cycle);
                             Q::recover(db, &err.cycle, &self.key)
                                 .map(|value| StampedValue {
                                     value,
@@ -418,8 +418,9 @@ where
                     }
 
                     Err(err) => {
-                        let err = runtime.report_unexpected_cycle(
-                            &self.database_key(db),
+                        let database_key = self.database_key(db);
+                        let err = db.salsa_runtime_mut().report_unexpected_cycle(
+                            &database_key,
                             err,
                             revision_now,
                         );

@@ -148,7 +148,7 @@ where
             evicted.evict();
         }
 
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, durability, changed_at);
 
         Ok(value)

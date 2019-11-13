@@ -32,7 +32,7 @@ use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub use futures;
 
@@ -377,7 +377,67 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 
-    fn fork(&self) -> Fork<Self>;
+    fn fork(&self, state: Arc<ForkState<Self>>) -> Fork<Self>;
+
+    fn forker(&mut self) -> Forker<'_, Self> {
+        let runtime = self.salsa_runtime();
+        Forker {
+            state: Arc::new(ForkState {
+                parents: runtime
+                    .parent
+                    .iter()
+                    .flat_map(|state| state.parents.iter())
+                    .cloned()
+                    .chain(Some(runtime.id()))
+                    .collect(),
+                cycle: Default::default(),
+            }),
+            db: self,
+        }
+    }
+}
+
+pub struct Forker<'a, DB>
+where
+    DB: Database,
+{
+    db: &'a mut DB,
+    state: Arc<ForkState<DB>>,
+}
+
+pub struct ForkState<DB: Database> {
+    parents: Vec<RuntimeId>,
+    cycle: Mutex<Vec<DB::DatabaseKey>>,
+}
+
+impl<DB> Drop for Forker<'_, DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let cycle = std::mem::replace(
+                Arc::get_mut(&mut self.state)
+                    .expect("Forker dropped before joining forked databases!")
+                    .cycle
+                    .get_mut()
+                    .unwrap(),
+                Vec::new(),
+            );
+            if !cycle.is_empty() {
+                self.db.salsa_runtime_mut().mark_cycle_participants(&cycle);
+            }
+        }
+    }
+}
+
+impl<DB> Forker<'_, DB>
+where
+    DB: ParallelDatabase,
+{
+    pub fn fork(&self) -> Fork<DB> {
+        self.db.fork(self.state.clone())
+    }
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
