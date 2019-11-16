@@ -248,7 +248,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         } else {
             query_fn_definitions.extend(quote! {
                 fn #fn_name(&mut self, #(#key_names: #keys),*) -> #value {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).get((#(#key_names),*))
                 }
             });
         }

@@ -435,10 +435,12 @@ impl<DB> Forker<'_, DB>
 where
     DB: ParallelDatabase,
 {
-    pub fn fork(&self) -> Fork<DB> {
+    pub fn fork(&self) -> Snapshot<DB> {
         self.db.fork(self.state.clone())
     }
 }
+
+pub type Fork<DB> = Snapshot<DB>;
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
 /// only gives `&self` access to it. See [the `snapshot` method][fm]
@@ -458,8 +460,7 @@ where
     DB: ParallelDatabase,
 {
     /// Creates a `Snapshot` that wraps the given database handle
-    /// `db`. From this point forward, only shared references to `db`
-    /// will be possible.
+    /// `db`.
     pub fn new(db: DB) -> Self {
         Snapshot { db }
     }
@@ -476,35 +477,7 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    db: DB,
-}
-
-impl<DB> Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    pub fn new(db: DB) -> Self {
-        Fork { db }
-    }
-}
-
-impl<DB> std::ops::Deref for Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    type Target = DB;
-
-    fn deref(&self) -> &DB {
-        &self.db
-    }
-}
-
-impl<DB> std::ops::DerefMut for Fork<DB>
+impl<DB> std::ops::DerefMut for Snapshot<DB>
 where
     DB: ParallelDatabase,
 {
@@ -627,6 +600,10 @@ where
 
     fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
         <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
+    }
+
+    pub fn get(&mut self, key: Q::Key) -> Q::Value {
+        crate::plumbing::sync_future(self.try_get(key)).unwrap_or_else(|err| panic!("{}", err))
     }
 
     /// Execute the query on a given input. Usually it's easier to

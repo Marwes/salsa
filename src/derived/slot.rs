@@ -140,20 +140,13 @@ where
 
         if let QueryState::Memoized(memo) = &*self.state.read() {
             if let Some(value) = &memo.value {
-                if memo.verified_at == revision_now {
-                    let value = StampedValue {
-                        durability: memo.durability,
-                        changed_at: memo.changed_at,
-                        value: value.clone(),
-                    };
+                let value = StampedValue {
+                    durability: memo.durability,
+                    changed_at: memo.changed_at,
+                    value: value.clone(),
+                };
 
-                    info!(
-                        "{:?}: returning memoized value changed at {:?}",
-                        self, value.changed_at
-                    );
-
-                    return Some(value);
-                }
+                return Some(value);
             }
         }
         None
