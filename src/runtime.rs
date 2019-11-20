@@ -464,12 +464,12 @@ where
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key == *database_key)
-                .unwrap();
-            let mut cycle = Vec::new();
+                .expect("bug: query is not on the stack");
             let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key.clone());
-            }
+            let cycle: Vec<_> = cycle_participants
+                .iter()
+                .map(|active_query| active_query.database_key.clone())
+                .collect();
 
             assert!(!cycle.is_empty());
 
@@ -556,9 +556,8 @@ where
 
     pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
         let mut graph = self.shared_state.dependency_graph.lock();
-        for id in self.ids() {
-            graph.remove_edge(database_key, id)
-        }
+        let id = self.id();
+        graph.remove_edge(database_key, id);
     }
 }
 

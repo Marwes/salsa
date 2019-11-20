@@ -43,12 +43,13 @@ pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
 #[doc(hidden)]
-pub type BoxFutureLocal<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
+pub type BoxFutureLocal<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps + Send + Sync {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
@@ -494,13 +495,15 @@ where
 /// In particular, `Group::GroupData: Send + Sync` must imply that
 /// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
 /// by the dependency tracking logic.
-pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub unsafe trait Query<DB: Database>:
+    Debug + Default + Send + Sync + Sized + 'static
+{
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
-    type Key: Clone + Debug + Hash + Eq;
+    type Key: Clone + Debug + Hash + Eq + Send + Sync;
 
     /// What value does the query return?
-    type Value: Clone + Debug;
+    type Value: Clone + Debug + Send + Sync;
 
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self>;
