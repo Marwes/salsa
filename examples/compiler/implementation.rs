@@ -1,6 +1,8 @@
 use crate::compiler::CompilerDatabase;
 use crate::interner::InternerDatabase;
 
+use gluon_salsa as salsa;
+
 /// Our "database" will be threaded through our application (though
 /// 99% of the application only interacts with it through traits and
 /// never knows its real name). It contains all the values for all of
@@ -13,7 +15,7 @@ use crate::interner::InternerDatabase;
 /// to your context (e.g., a shared counter or some such thing). If
 /// mutations to that shared state affect the results of your queries,
 /// that's going to mess up the incremental results.
-#[salsa::database(InternerDatabase, CompilerDatabase)]
+#[gluon_salsa::database(InternerDatabase, CompilerDatabase)]
 #[derive(Default)]
 pub struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,

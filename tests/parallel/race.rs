@@ -1,4 +1,5 @@
 use crate::setup::{ParDatabase, ParDatabaseImpl, ParDatabaseMut};
+use gluon_salsa as salsa;
 use salsa::ParallelDatabase;
 
 /// Test where a read and a set are racing with one another.

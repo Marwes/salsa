@@ -1,6 +1,8 @@
 use crate::queries;
 use crossbeam::atomic::AtomicCell;
 
+use gluon_salsa as salsa;
+
 #[salsa::database(queries::GroupStruct)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {

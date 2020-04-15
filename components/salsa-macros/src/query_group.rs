@@ -90,7 +90,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     panic!("multiple storage attributes specified");
                 }
                 if invoke.is_some() && storage == QueryStorage::Input {
-                    panic!("#[salsa::invoke] cannot be set on #[salsa::input] queries");
+                    panic!("#[gluon_salsa::invoke] cannot be set on #[gluon_salsa::input] queries");
                 }
 
                 // Extract keys.
@@ -121,7 +121,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     ),
                 };
 
-                // For `#[salsa::interned]` keys, we create a "lookup key" automatically.
+                // For `#[gluon_salsa::interned]` keys, we create a "lookup key" automatically.
                 //
                 // For a query like:
                 //

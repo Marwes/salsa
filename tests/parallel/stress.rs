@@ -14,7 +14,7 @@ const N_READER_OPS: usize = 100;
 struct Canceled;
 type Cancelable<T> = Result<T, Canceled>;
 
-#[salsa::query_group(Stress)]
+use gluon_salsa as salsa; #[salsa::query_group(Stress)]
 trait StressDatabase: salsa::Database {
     #[salsa::input]
     fn a(&self, key: usize) -> usize;

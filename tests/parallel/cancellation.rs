@@ -1,6 +1,7 @@
 use crate::setup::{
     CancelationFlag, Canceled, Knobs, ParDatabase, ParDatabaseImpl, ParDatabaseMut, WithValue,
 };
+use gluon_salsa as salsa;
 use salsa::ParallelDatabase;
 
 macro_rules! assert_canceled {

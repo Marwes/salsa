@@ -2,7 +2,7 @@ use salsa::{Database, ParallelDatabase, Snapshot};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 
-#[salsa::query_group(PanicSafelyStruct)]
+use gluon_salsa as salsa; #[salsa::query_group(PanicSafelyStruct)]
 trait PanicSafelyDatabase: salsa::Database {
     #[salsa::input]
     fn one(&self) -> usize;

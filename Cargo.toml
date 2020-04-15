@@ -1,6 +1,6 @@
 [package]
-name = "salsa"
-version = "0.14.2" # CHECK salsa-macros version
+name = "gluon-salsa"
+version = "0.14.1" # CHECK salsa-macros version
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
@@ -20,7 +20,7 @@ rustc-hash = "1.0"
 smallvec = "1.0.0"
 rand = { version = "0.7", features = [ "small_rng" ] }
 
-salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
+gluon-salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
 
 [dev-dependencies]
 rand_distr = "0.2.1"

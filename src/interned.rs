@@ -63,7 +63,7 @@ struct InternTables<K> {
 }
 
 /// Trait implemented for the "key" that results from a
-/// `#[salsa::intern]` query.  This is basically meant to be a
+/// `#[gluon_salsa::intern]` query.  This is basically meant to be a
 /// "newtype"'d `u32`.
 pub trait InternKey {
     /// Create an instance of the intern-key from a `u32` value.

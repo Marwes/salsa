@@ -1,5 +1,6 @@
 use crate::db;
 use crate::group::{FibonacciQuery, GcDatabase};
+use gluon_salsa as salsa;
 use salsa::debug::DebugQueryTable;
 use salsa::{Database, Durability, SweepStrategy};
 

@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use gluon_salsa as salsa;
+
 ///////////////////////////////////////////////////////////////////////////
 // Step 1. Define the query group
 
 // A **query group** is a collection of queries (both inputs and
 // functions) that are defined in one particular spot. Each query
 // group is defined by a trait decorated with the
-// `#[salsa::query_group]` attribute. The trait defines one method per
+// `#[gluon_salsa::query_group]` attribute. The trait defines one method per
 // query, with the arguments to the method being the query **keys** and
 // the return value being the query's **value**.
 //
@@ -63,7 +65,7 @@ fn length(db: &mut impl HelloWorld, (): ()) -> usize {
 // Step 3. Define the database struct
 
 // Define the actual database struct. This struct needs to be
-// annotated with `#[salsa::database(..)]`. The list `..` will be the
+// annotated with `#[gluon_salsa::database(..)]`. The list `..` will be the
 // paths leading to the storage structs for each query group that this
 // database supports. This attribute macro will generate the necessary
 // impls so that the database implements the corresponding traits as
@@ -74,7 +76,7 @@ fn length(db: &mut impl HelloWorld, (): ()) -> usize {
 // must have a `runtime` field as shown, and you must implement the
 // `salsa::Database` trait (as shown below).
 // ANCHOR:database
-#[salsa::database(HelloWorldStorage)]
+#[gluon_salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,

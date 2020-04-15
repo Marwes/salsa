@@ -32,9 +32,9 @@ mod query_group;
 /// The simplest example is something like this:
 ///
 /// ```ignore
-/// #[salsa::query_group]
+/// #[gluon_salsa::query_group]
 /// trait TypeckDatabase {
-///     #[salsa::input] // see below for other legal attributes
+///     #[gluon_salsa::input] // see below for other legal attributes
 ///     fn my_query(&self, input: u32) -> u64;
 ///
 ///     /// Queries can have any number of inputs (including zero); if there
@@ -47,7 +47,7 @@ mod query_group;
 /// Here is a list of legal `salsa::XXX` attributes:
 ///
 /// - Query group attributes: apply to the trait itself
-///   - `#[salsa::requires(OtherGroup)]` -- makes `OtherGroup` a
+///   - `#[gluon_salsa::requires(OtherGroup)]` -- makes `OtherGroup` a
 ///     private dependency of the current group. That means that
 ///     functions that implement queries have `: OutherGropup` bound
 ///     on the database argument. This is similar to just making `OtherGroup`
@@ -56,11 +56,11 @@ mod query_group;
 ///     a super trait.
 /// - Storage attributes: control how the query data is stored and set. These
 ///   are described in detail in the section below.
-///   - `#[salsa::input]`
-///   - `#[salsa::memoized]`
-///   - `#[salsa::dependencies]`
+///   - `#[gluon_salsa::input]`
+///   - `#[gluon_salsa::memoized]`
+///   - `#[gluon_salsa::dependencies]`
 /// - Query execution:
-///   - `#[salsa::invoke(path::to::my_fn)]` -- for a non-input, this
+///   - `#[gluon_salsa::invoke(path::to::my_fn)]` -- for a non-input, this
 ///     indicates the function to call when a query must be
 ///     recomputed. The default is to call a function in the same
 ///     module with the same name as the query.
@@ -89,13 +89,13 @@ mod query_group;
 ///
 /// Derived queries are specified by a function.
 ///
-/// - `#[salsa::memoized]` (the default) -- The result is memoized
+/// - `#[gluon_salsa::memoized]` (the default) -- The result is memoized
 ///   between calls.  If the inputs have changed, we will recompute
 ///   the value, but then compare against the old memoized value,
 ///   which can significantly reduce the amount of recomputation
 ///   required in new revisions. This does require that the value
 ///   implements `Eq`.
-/// - `#[salsa::dependencies]` -- does not cache the value, so it will
+/// - `#[gluon_salsa::dependencies]` -- does not cache the value, so it will
 ///   be recomputed every time it is needed. We do track the inputs, however,
 ///   so if they have not changed, then things that rely on this query
 ///   may be known not to have changed.
@@ -106,11 +106,11 @@ mod query_group;
 /// multiple storage specifiers:
 ///
 /// ```compile_fail
-/// # use salsa_macros as salsa;
-/// #[salsa::query_group]
+/// # use gluon_salsa_macros as salsa;
+/// #[gluon_salsa::query_group]
 /// trait CodegenDatabase {
-///     #[salsa::input]
-///     #[salsa::memoized]
+///     #[gluon_salsa::input]
+///     #[gluon_salsa::memoized]
 ///     fn my_query(&self, input: u32) -> u64;
 /// }
 /// ```
@@ -118,11 +118,11 @@ mod query_group;
 /// It is also an error to annotate a function to `invoke` on an `input` query:
 ///
 /// ```compile_fail
-/// # use salsa_macros as salsa;
-/// #[salsa::query_group]
+/// # use gluon_salsa_macros as salsa;
+/// #[gluon_salsa::query_group]
 /// trait CodegenDatabase {
-///     #[salsa::input]
-///     #[salsa::invoke(typeck::my_query)]
+///     #[gluon_salsa::input]
+///     #[gluon_salsa::invoke(typeck::my_query)]
 ///     fn my_query(&self, input: u32) -> u64;
 /// }
 /// ```
@@ -135,7 +135,7 @@ pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
 /// query groups that your database supports. The format looks like so:
 ///
 /// ```rust,ignore
-/// #[salsa::database(MyQueryGroup1, MyQueryGroup2)]
+/// #[gluon_salsa::database(MyQueryGroup1, MyQueryGroup2)]
 /// struct MyDatabase {
 ///     runtime: salsa::Runtime<MyDatabase>, // <-- your database will need this field, too
 /// }

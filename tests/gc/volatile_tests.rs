@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Query group for tests for how interned keys interact with GC.
-#[salsa::query_group(Volatile)]
+use gluon_salsa as salsa; #[salsa::query_group(Volatile)]
 pub(crate) trait VolatileDatabase: Database {
     #[salsa::input]
     fn atomic_cell(&self) -> Arc<AtomicUsize>;

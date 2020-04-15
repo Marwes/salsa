@@ -1,5 +1,5 @@
 [package]
-name = "salsa-macros"
+name = "gluon-salsa-macros"
 version = "0.14.1"
 authors = ["Salsa developers"]
 edition = "2018"

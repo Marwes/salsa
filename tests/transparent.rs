@@ -1,6 +1,6 @@
 //! Test that transparent (uncached) queries work
 
-#[salsa::query_group(QueryGroupStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup {
     #[salsa::input]
     fn input(&self, x: u32) -> u32;

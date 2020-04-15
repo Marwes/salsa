@@ -1,4 +1,5 @@
 use crate::setup::{ParDatabase, ParDatabaseImpl, ParDatabaseMut};
+use gluon_salsa as salsa;
 use salsa::ParallelDatabase;
 
 /// Test two `sum` queries (on distinct keys) executing in different

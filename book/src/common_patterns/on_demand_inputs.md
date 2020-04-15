@@ -15,7 +15,7 @@ This is possible to achieve in salsa, using a derived query and `report_syntheti
 The setup looks roughly like this:
 
 ```rust,ignore
-#[salsa::query_group(VfsDatabaseStorage)]
+#[gluon_salsa::query_group(VfsDatabaseStorage)]
 trait VfsDatabase: salsa::Database + FileWatcher {
     fn read(&self, path: PathBuf) -> String;
 }
@@ -32,7 +32,7 @@ fn read(db: &impl salsa::Database, path: PathBuf) -> String {
     std::fs::read_to_string(&path).unwrap_or_default()
 }
 
-#[salsa::database(VfsDatabaseStorage)]
+#[gluon_salsa::database(VfsDatabaseStorage)]
 struct MyDatabase { ... }
 
 impl FileWatcher for MyDatabase {

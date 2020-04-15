@@ -2,7 +2,7 @@ use crate::implementation::{TestContext, TestContextImpl};
 use salsa::debug::DebugQueryTable;
 use salsa::{Database, Durability};
 
-#[salsa::query_group(Constants)]
+use gluon_salsa as salsa; #[salsa::query_group(Constants)]
 pub(crate) trait ConstantsDatabase: TestContext {
     #[salsa::input]
     fn input(&self, key: char) -> usize;

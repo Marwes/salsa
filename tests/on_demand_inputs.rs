@@ -10,7 +10,7 @@ use crossbeam::atomic::AtomicCell;
 
 use salsa::{Database as _, Durability};
 
-#[salsa::query_group(QueryGroupStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
     fn a(&self, x: u32) -> u32;
     fn b(&self, x: u32) -> u32;

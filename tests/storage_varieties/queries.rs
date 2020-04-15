@@ -2,7 +2,7 @@ pub(crate) trait Counter: salsa::Database {
     fn increment(&self) -> usize;
 }
 
-#[salsa::query_group(GroupStruct)]
+use gluon_salsa as salsa; #[salsa::query_group(GroupStruct)]
 pub(crate) trait Database: Counter {
     fn memoized(&self) -> usize;
     fn volatile(&self) -> usize;

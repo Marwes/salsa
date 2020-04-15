@@ -12,7 +12,7 @@ use std::num::NonZeroU32;
 /// which are implemented for `u32` and `usize`:
 ///
 /// ```
-/// # use salsa::InternId;
+/// # use gluon_salsa::InternId;
 /// let intern_id1 = InternId::from(22_u32);
 /// let intern_id2 = InternId::from(22_usize);
 /// assert_eq!(intern_id1, intern_id2);
@@ -25,7 +25,7 @@ use std::num::NonZeroU32;
 /// `usize` using the `as_u32` or `as_usize` methods or the `From` impls.
 ///
 /// ```
-/// # use salsa::InternId;
+/// # use gluon_salsa::InternId;
 /// let intern_id = InternId::from(22_u32);
 /// let value = u32::from(intern_id);
 /// assert_eq!(value, 22);
@@ -41,7 +41,7 @@ use std::num::NonZeroU32;
 /// word.
 ///
 /// ```should_panic
-/// # use salsa::InternId;
+/// # use gluon_salsa::InternId;
 /// InternId::from(InternId::MAX);
 /// ```
 ///
@@ -68,7 +68,7 @@ impl InternId {
     /// Convert this raw-id into a u32 value.
     ///
     /// ```
-    /// # use salsa::InternId;
+    /// # use gluon_salsa::InternId;
     /// let intern_id = InternId::from(22_u32);
     /// let value = intern_id.as_usize();
     /// assert_eq!(value, 22);
@@ -80,7 +80,7 @@ impl InternId {
     /// Convert this raw-id into a usize value.
     ///
     /// ```
-    /// # use salsa::InternId;
+    /// # use gluon_salsa::InternId;
     /// let intern_id = InternId::from(22_u32);
     /// let value = intern_id.as_usize();
     /// assert_eq!(value, 22);

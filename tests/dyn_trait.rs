@@ -16,7 +16,7 @@ impl salsa::Database for DynTraitDatabase {
     }
 }
 
-#[salsa::query_group(DynTraitStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(DynTraitStorage)]
 trait DynTrait {
     #[salsa::input]
     fn input(&self, x: u32) -> u32;

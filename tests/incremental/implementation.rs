@@ -5,6 +5,8 @@ use crate::memoized_dep_inputs;
 use crate::memoized_inputs;
 use crate::memoized_volatile;
 
+use gluon_salsa as salsa;
+
 pub(crate) trait TestContext: salsa::Database {
     fn clock(&self) -> &Counter;
     fn log(&self) -> &Log;

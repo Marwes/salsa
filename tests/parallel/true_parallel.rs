@@ -1,4 +1,5 @@
 use crate::setup::{Knobs, ParDatabase, ParDatabaseImpl, ParDatabaseMut, WithValue};
+use gluon_salsa as salsa;
 use salsa::ParallelDatabase;
 use std::panic::{self, AssertUnwindSafe};
 

@@ -1,5 +1,6 @@
 use crate::setup::{ParDatabase, ParDatabaseImpl, ParDatabaseMut};
 use crate::signal::Signal;
+use gluon_salsa as salsa;
 use salsa::{Database, ParallelDatabase};
 use std::sync::Arc;
 

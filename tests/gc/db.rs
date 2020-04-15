@@ -3,6 +3,8 @@ use crate::interned;
 use crate::log::{HasLog, Log};
 use crate::volatile_tests;
 
+use gluon_salsa as salsa;
+
 #[salsa::database(group::Gc, interned::Intern, volatile_tests::Volatile)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {

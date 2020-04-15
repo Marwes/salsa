@@ -3,7 +3,7 @@ use salsa::debug::DebugQueryTable;
 use salsa::{Database, Durability, InternId, SweepStrategy};
 
 /// Query group for tests for how interned keys interact with GC.
-#[salsa::query_group(Intern)]
+use gluon_salsa as salsa; #[salsa::query_group(Intern)]
 pub(crate) trait InternDatabase {
     /// A dummy input that can be used to trigger a new revision.
     #[salsa::input]

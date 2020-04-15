@@ -1,3 +1,5 @@
+use gluon_salsa as salsa;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ClassData {
     pub fields: Vec<Field>,

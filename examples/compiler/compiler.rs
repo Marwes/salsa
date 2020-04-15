@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::{interner::Interner, values::*};
 
+use gluon_salsa as salsa;
+
 #[salsa::query_group(CompilerDatabase)]
 pub trait Compiler: Interner {
     #[salsa::input]

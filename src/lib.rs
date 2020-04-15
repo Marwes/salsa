@@ -717,6 +717,6 @@ where
 // Re-export the procedural macros.
 #[allow(unused_imports)]
 #[macro_use]
-extern crate salsa_macros;
+extern crate gluon_salsa_macros;
 #[doc(hidden)]
-pub use salsa_macros::*;
+pub use gluon_salsa_macros::*;

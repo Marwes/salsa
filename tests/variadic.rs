@@ -1,4 +1,4 @@
-#[salsa::query_group(HelloWorld)]
+use gluon_salsa as salsa; #[salsa::query_group(HelloWorld)]
 trait HelloWorldDatabase: salsa::Database {
     #[salsa::input]
     fn input(&self, a: u32, b: u32) -> u32;

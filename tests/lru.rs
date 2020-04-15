@@ -24,7 +24,7 @@ impl Drop for HotPotato {
     }
 }
 
-#[salsa::query_group(QueryGroupStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup: salsa::Database {
     fn get(&self, x: u32) -> Arc<HotPotato>;
     fn get_volatile(&self, x: u32) -> usize;

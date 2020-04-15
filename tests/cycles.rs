@@ -35,7 +35,7 @@ impl ParallelDatabase for DatabaseImpl {
     }
 }
 
-#[salsa::query_group(GroupStruct)]
+use gluon_salsa as salsa; #[salsa::query_group(GroupStruct)]
 trait Database: salsa::Database {
     // `a` and `b` depend on each other and form a cycle
     fn memoized_a(&self) -> ();

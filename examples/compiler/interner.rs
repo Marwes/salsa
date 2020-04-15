@@ -1,4 +1,5 @@
 use crate::values::*;
+use gluon_salsa as salsa;
 
 #[salsa::query_group(InternerDatabase)]
 pub trait Interner: salsa::Database {

@@ -2,6 +2,7 @@
 
 use crate::implementation::DatabaseImpl;
 use crate::queries::Database;
+use gluon_salsa as salsa;
 use salsa::Database as _Database;
 use salsa::Durability;
 

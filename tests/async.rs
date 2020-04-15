@@ -31,7 +31,7 @@ impl salsa::ParallelDatabase for AsyncDatabase {
     }
 }
 
-#[salsa::query_group(AsyncTraitStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(AsyncTraitStorage)]
 trait AsyncTrait: salsa::ParallelDatabase {
     #[salsa::input]
     fn input(&self, x: String) -> u32;

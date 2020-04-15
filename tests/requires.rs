@@ -1,7 +1,9 @@
 //! Test `salsa::requires` attribute for private query dependencies
 //! https://github.com/salsa-rs/salsa-rfcs/pull/3
+use gluon_salsa as salsa;
 
 mod queries {
+    use gluon_salsa as salsa;
     #[salsa::query_group(InputGroupStorage)]
     pub trait InputGroup {
         #[salsa::input]

@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::{Database, Durability};
 
-#[salsa::query_group(MemoizedVolatile)]
+use gluon_salsa as salsa; #[salsa::query_group(MemoizedVolatile)]
 pub(crate) trait MemoizedVolatileContext: TestContext {
     // Queries for testing a "volatile" value wrapped by
     // memoization.

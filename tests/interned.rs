@@ -31,7 +31,7 @@ impl salsa::ParallelDatabase for Database {
     }
 }
 
-#[salsa::query_group(InternStorage)]
+use gluon_salsa as salsa; #[salsa::query_group(InternStorage)]
 trait Intern {
     #[salsa::interned]
     fn intern1(&self, x: String) -> InternId;

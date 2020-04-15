@@ -6,7 +6,7 @@
     - instead, create a normal query which invokes the
       `report_untracked_read` method on the salsa runtime
 - introduce "slots", an optimization to salsa's internal workings
-- document `#[salsa::requires]` attribute, which permits private dependencies
+- document `#[gluon_salsa::requires]` attribute, which permits private dependencies
 - Adopt `AtomicU64` for `runtimeId` (#182)
 - use `ptr::eq` and `ptr::hash` for readability
 - upgrade parking lot, rand dependencies

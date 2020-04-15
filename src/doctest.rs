@@ -6,6 +6,8 @@
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
 ///
+/// use gluon_salsa as salsa;
+///
 /// #[salsa::query_group(NoSendSyncStorage)]
 /// trait NoSendSyncDatabase: salsa::Database {
 ///     fn no_send_sync_value(&self, key: bool) -> Rc<bool>;
@@ -20,7 +22,7 @@
 ///     *key
 /// }
 ///
-/// #[salsa::database(NoSendSyncStorage)]
+/// #[gluon_salsa::database(NoSendSyncStorage)]
 /// #[derive(Default)]
 /// struct DatabaseImpl {
 ///     runtime: salsa::Runtime<DatabaseImpl>,
@@ -51,6 +53,8 @@ fn test_key_not_send_db_not_send() {}
 /// use std::rc::Rc;
 /// use std::cell::Cell;
 ///
+/// use gluon_salsa as salsa;
+///
 /// #[salsa::query_group(NoSendSyncStorage)]
 /// trait NoSendSyncDatabase: salsa::Database {
 ///     fn no_send_sync_value(&self, key: bool) -> Cell<bool>;
@@ -65,7 +69,7 @@ fn test_key_not_send_db_not_send() {}
 ///     *key
 /// }
 ///
-/// #[salsa::database(NoSendSyncStorage)]
+/// #[gluon_salsa::database(NoSendSyncStorage)]
 /// #[derive(Default)]
 /// struct DatabaseImpl {
 ///     runtime: salsa::Runtime<DatabaseImpl>,

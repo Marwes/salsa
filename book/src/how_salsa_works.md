@@ -23,7 +23,7 @@ varieties:
   we'll figure out (fairly intelligently) when we can re-use these
   memoized values and when we have to recompute them.
 
-## How to use Salsa in three easy steps
+## How to use gluon_salsa in three easy steps
 
 Using salsa is as easy as 1, 2, 3...
 

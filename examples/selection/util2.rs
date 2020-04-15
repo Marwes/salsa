@@ -1,5 +1,7 @@
 use super::*;
 
+use gluon_salsa as salsa;
+
 // ANCHOR: util2
 #[salsa::query_group(Request)]
 trait RequestUtil: RequestParser {

@@ -1,6 +1,8 @@
 /// Sources for the [selection pattern chapter][c] of the salsa book.
 ///
 /// [c]: https://salsa-rs.github.io/salsa/common_patterns/selection.html
+///
+use gluon_salsa as salsa;
 
 // ANCHOR: request
 #[derive(Clone, Debug, PartialEq, Eq)]

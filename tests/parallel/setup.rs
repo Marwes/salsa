@@ -5,6 +5,7 @@ use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use std::sync::Arc;
 
+use gluon_salsa as salsa;
 #[salsa::query_group(Par)]
 pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
     #[salsa::input]

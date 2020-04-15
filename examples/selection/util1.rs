@@ -1,7 +1,9 @@
 use super::*;
 
+use gluon_salsa as salsa;
+
 // ANCHOR: util1
-#[salsa::query_group(Request)]
+#[gluon_salsa::query_group(Request)]
 trait RequestUtil: RequestParser {
     fn content_type(&self) -> Option<String>;
 }
