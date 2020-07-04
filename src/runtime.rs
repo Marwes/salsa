@@ -847,12 +847,22 @@ where
         };
 
         for from_id in &vec {
-            let edges = self.edges.get_mut(from_id).expect("remove_edge");
-            let i = edges
-                .iter()
-                .position(|edge| edge.id == to_id)
-                .expect("Tried to remove edge which did not exist in the edge list");
-            edges.swap_remove(i);
+            use std::collections::hash_map::Entry;
+            match self.edges.entry(*from_id) {
+                Entry::Occupied(mut entry) => {
+                    let edges = entry.get_mut();
+                    let i = edges
+                        .iter()
+                        .position(|edge| edge.id == to_id)
+                        .expect("Tried to remove edge which did not exist in the edge list");
+                    edges.swap_remove(i);
+
+                    if edges.is_empty() {
+                        entry.remove();
+                    }
+                }
+                Entry::Vacant(_) => unreachable!(),
+            }
         }
     }
 
