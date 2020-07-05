@@ -486,6 +486,7 @@ where
                 let cycle_iter = dependency_graph
                     .get_cycle_path(
                         database_key,
+                        error.from,
                         error.to,
                         query_stack.iter().map(|query| &query.database_key),
                     )
@@ -802,15 +803,31 @@ where
     K: Hash + Eq + Clone,
 {
     fn can_add_edge(&self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+        !self.find_edge(from_id, to_id, &mut |_| ())
+    }
+
+    fn find_edge(
+        &self,
+        from_id: RuntimeId,
+        to_id: RuntimeId,
+        f: &mut impl FnMut(RuntimeId),
+    ) -> bool {
         // First: walk the chain of things that `to_id` depends on,
         // looking for us.
         if from_id == to_id {
-            return false;
+            return true;
         }
         if let Some(qs) = self.edges.get(&to_id) {
-            return qs.iter().all(|q| self.can_add_edge(from_id, q.id));
+            return qs.iter().any(|q| {
+                if self.find_edge(from_id, q.id, f) {
+                    f(q.id);
+                    true
+                } else {
+                    false
+                }
+            });
         }
-        true
+        false
     }
 
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
@@ -869,30 +886,37 @@ where
     fn get_cycle_path<'a>(
         &'a self,
         database_key: &'a K,
+        from: RuntimeId,
         to: RuntimeId,
         local_path: impl IntoIterator<Item = &'a K>,
     ) -> impl Iterator<Item = &'a K>
     where
         K: std::fmt::Debug,
     {
-        let mut current = Some((to, std::slice::from_ref(database_key)));
+        let mut vec = Vec::new();
+        assert!(self.find_edge(from, to, &mut |id| vec.push(id)));
+        vec.push(to);
+
+        let mut current = Some(std::slice::from_ref(database_key));
         let mut last = None;
         let mut local_path = Some(local_path);
+        let mut vec_iter = vec.into_iter().rev().peekable();
         std::iter::from_fn(move || match current.take() {
-            Some((id, path)) => {
+            Some(path) => {
+                let id = vec_iter.next()?;
                 let link_key = path.last().unwrap();
 
-                current = self.edges.get(&id).map(|out_edges| {
-                    let (edge, i) = out_edges
-                        .iter()
-                        .find_map(|edge| {
-                            edge.path
-                                .iter()
-                                .rposition(|p| p == link_key)
-                                .map(|i| (edge, i))
-                        })
-                        .unwrap();
-                    (edge.id, &edge.path[i + 1..])
+                current = self.edges.get(&id).and_then(|out_edges| {
+                    let next_id = vec_iter.peek()?;
+                    let edge = out_edges.iter().find(|edge| edge.id == *next_id)?;
+
+                    Some(
+                        edge.path
+                            .iter()
+                            .rposition(|p| p == link_key)
+                            .map(|i| &edge.path[i + 1..])
+                            .unwrap_or_else(|| &edge.path[..]),
+                    )
                 });
 
                 if current.is_none() {
@@ -976,7 +1000,7 @@ mod tests {
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
         assert_eq!(
             graph
-                .get_cycle_path(&1, a, &[3, 2][..])
+                .get_cycle_path(&1, b, a, &[3, 2][..])
                 .cloned()
                 .collect::<Vec<i32>>(),
             vec![1, 2]
@@ -994,7 +1018,7 @@ mod tests {
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
         assert_eq!(
             graph
-                .get_cycle_path(&1, a, &[5, 6, 4, 7][..])
+                .get_cycle_path(&1, c, a, &[5, 6, 4, 7][..])
                 .cloned()
                 .collect::<Vec<i32>>(),
             vec![1, 3, 4, 7]
