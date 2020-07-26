@@ -6,7 +6,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, ReturnType, TraitItem, Type,
+    parse_macro_input, parse_quote, spanned::Spanned, Attribute, FnArg, Ident, ItemTrait,
+    ReturnType, TraitItem, Type,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
@@ -553,7 +554,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let invoke = query.invoke_tt();
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
-                quote! {
+                quote_spanned! { cycle_recovery_fn.span() =>
                     fn recover(db: &<Self as salsa::QueryDb<'d>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::QueryBase>::Key)
                         -> Option<<Self as salsa::QueryBase>::Value> {
                         Some(#cycle_recovery_fn(
