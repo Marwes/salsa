@@ -836,6 +836,11 @@ where
     }
 
     #[doc(hidden)]
+    pub fn __internal_into_db(self) -> &'a mut T {
+        self.db
+    }
+
+    #[doc(hidden)]
     pub fn __internal_get_db(&mut self) -> &mut T {
         self.db
     }
