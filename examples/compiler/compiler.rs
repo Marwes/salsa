@@ -30,7 +30,7 @@ pub trait Compiler: Interner {
 /// dolor,sit,amet,
 /// consectetur,adipiscing,elit
 /// ```
-fn all_classes(db: &mut impl Compiler) -> Arc<Vec<Class>> {
+fn all_classes<'d>(db: &(dyn Compiler + 'd)) -> Arc<Vec<Class>> {
     let string = db.input_string();
 
     let rows = string.split('\n');
@@ -55,13 +55,13 @@ fn all_classes(db: &mut impl Compiler) -> Arc<Vec<Class>> {
     Arc::new(classes)
 }
 
-fn fields(db: &mut impl Compiler, class: Class) -> Arc<Vec<Field>> {
+fn fields<'d>(db: &(dyn Compiler + 'd), class: Class) -> Arc<Vec<Field>> {
     let class = db.lookup_intern_class(class);
     let fields = class.fields.clone();
     Arc::new(fields)
 }
 
-fn all_fields(db: &mut impl Compiler) -> Arc<Vec<Field>> {
+fn all_fields<'d>(db: &(dyn Compiler + 'd)) -> Arc<Vec<Field>> {
     Arc::new(
         db.all_classes()
             .iter()

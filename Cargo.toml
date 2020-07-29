@@ -1,6 +1,6 @@
 [package]
-name = "gluon-salsa"
-version = "0.14.2" # CHECK salsa-macros version
+name = "salsa"
+version = "0.15.0" # CHECK salsa-macros version
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
@@ -9,23 +9,29 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
-async-trait = "0.1.14"
-crossbeam = "0.7.1"
-futures = "0.3.1"
+crossbeam-utils = { version = "0.7.1", default-features = false }
 indexmap = "1.0.1"
+futures-channel = { version = "0.3", features = ["alloc"], default-features = false, optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }
 lock_api = "0.4"
 log = "0.4.5"
 parking_lot = "0.11.0"
 rustc-hash = "1.0"
 smallvec = "1.0.0"
-rand = { version = "0.7", features = [ "small_rng" ] }
+rand = { version = "0.7", features = [ "small_rng" ], default-features = false }
 
-gluon-salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
+salsa-macros = { version = "0.15.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
-rand_distr = "0.2.1"
 diff = "0.1.0"
 env_logger = "0.7"
 linked-hash-map = "0.5.2"
+rand = "0.7"
+rand_distr = "0.2.1"
+tokio = { version = "0.2", features = ["macros", "rt-core"] }
 
 [workspace]
+
+[features]
+default = ["async"]
+async = ["futures-channel", "futures-util", "salsa-macros/async"]

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use gluon_salsa as salsa;
 #[salsa::query_group(Par)]
-pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
+pub(crate) trait ParDatabase: Knobs {
     #[salsa::input]
     fn input(&self, key: char) -> usize;
 
@@ -24,8 +24,6 @@ pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
 
     /// Invokes `sum2_drop_sum`
     fn sum3_drop_sum(&self, key: &'static str) -> usize;
-
-    fn snapshot_me(&self) -> ();
 }
 
 #[derive(PartialEq, Eq)]
@@ -115,23 +113,7 @@ pub(crate) struct KnobsStruct {
     pub(crate) sum3_drop_sum_should_panic: AtomicCell<bool>,
 }
 
-impl Clone for KnobsStruct {
-    fn clone(&self) -> Self {
-        KnobsStruct {
-            signal: self.signal.clone(),
-            signal_on_will_block: AtomicCell::new(self.signal_on_will_block.load()),
-            sum_signal_on_entry: AtomicCell::new(self.sum_signal_on_entry.load()),
-            sum_wait_for_on_entry: AtomicCell::new(self.sum_wait_for_on_entry.load()),
-            sum_should_panic: AtomicCell::new(self.sum_should_panic.load()),
-            sum_wait_for_cancellation: AtomicCell::new(self.sum_wait_for_cancellation.load()),
-            sum_wait_for_on_exit: AtomicCell::new(self.sum_wait_for_on_exit.load()),
-            sum_signal_on_exit: AtomicCell::new(self.sum_signal_on_exit.load()),
-            sum3_drop_sum_should_panic: AtomicCell::new(self.sum3_drop_sum_should_panic.load()),
-        }
-    }
-}
-
-fn sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
+fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     let mut sum = 0;
 
     db.signal(db.knobs().sum_signal_on_entry.load());
@@ -179,49 +161,35 @@ fn sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
     sum
 }
 
-fn sum2(db: &mut impl ParDatabase, key: &'static str) -> usize {
+fn sum2(db: &dyn ParDatabase, key: &'static str) -> usize {
     db.sum(key)
 }
 
-fn sum2_drop_sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
+fn sum2_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     let _ = db.sum(key);
     22
 }
 
-fn sum3(db: &mut impl ParDatabase, key: &'static str) -> usize {
+fn sum3(db: &dyn ParDatabase, key: &'static str) -> usize {
     db.sum2(key)
 }
 
-fn sum3_drop_sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
-    if db.knobs().sum3_drop_sum_should_panic.load() {
+fn sum3_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
+    if db.knobs().sum3_drop_sum_should_panic.get() {
         panic!("sum3_drop_sum executed")
     }
     db.sum2_drop_sum(key)
 }
 
-fn snapshot_me(db: &mut impl ParDatabase) {
-    // this should panic
-    db.snapshot();
-}
-
 #[salsa::database(Par)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
-    runtime: salsa::Runtime<ParDatabaseImpl>,
-    knobs: Arc<KnobsStruct>,
+    storage: salsa::Storage<Self>,
+    knobs: KnobsStruct,
 }
 
 impl Database for ParDatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
-        let event = event_fn();
+    fn salsa_event(&self, event: salsa::Event) {
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {
                 self.signal(self.knobs().signal_on_will_block.load());
@@ -239,14 +207,15 @@ impl Database for ParDatabaseImpl {
 impl ParallelDatabase for ParDatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(ParDatabaseImpl {
-            runtime: self.runtime.snapshot(self),
-            knobs: Arc::new(KnobsStruct::clone(&self.knobs)),
+            storage: self.storage.snapshot(),
+            knobs: self.knobs.clone(),
         })
     }
-    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+
+    fn fork(&self, forker: salsa::ForkState) -> salsa::Snapshot<Self> {
         salsa::Snapshot::new(Self {
-            runtime: self.runtime.fork(self, forker),
-            knobs: Arc::new(KnobsStruct::clone(&self.knobs)),
+            storage: self.storage.fork(forker),
+            knobs: self.knobs.clone(),
         })
     }
 }

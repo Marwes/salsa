@@ -8,23 +8,21 @@ struct Error {
 #[salsa::database(GroupStruct)]
 #[derive(Default)]
 struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}
 
 impl ParallelDatabase for DatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(DatabaseImpl {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
+        })
+    }
+
+    fn fork(&self, forker: salsa::ForkState) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            storage: self.storage.fork(forker),
         })
     }
 
@@ -53,50 +51,50 @@ trait Database: salsa::Database {
     fn cycle_c(&self) -> Result<(), Error>;
 }
 
-fn recover_a(_db: &mut impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_a(_db: &dyn Database, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn recover_b(_db: &mut impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_b(_db: &dyn Database, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn memoized_a(db: &mut impl Database) -> () {
+fn memoized_a(db: &dyn Database) -> () {
     db.memoized_b()
 }
 
-fn memoized_b(db: &mut impl Database) -> () {
+fn memoized_b(db: &dyn Database) -> () {
     db.memoized_a()
 }
 
-fn volatile_a(db: &mut impl Database) -> () {
-    db.salsa_runtime_mut().report_untracked_read();
+fn volatile_a(db: &dyn Database) -> () {
+    db.salsa_runtime().report_untracked_read();
     db.volatile_b()
 }
 
-fn volatile_b(db: &mut impl Database) -> () {
-    db.salsa_runtime_mut().report_untracked_read();
+fn volatile_b(db: &dyn Database) -> () {
+    db.salsa_runtime().report_untracked_read();
     db.volatile_a()
 }
 
-fn cycle_leaf(_db: &mut impl Database) -> () {}
+fn cycle_leaf(_db: &dyn Database) -> () {}
 
-fn cycle_a(db: &mut impl Database) -> Result<(), Error> {
+fn cycle_a(db: &dyn Database) -> Result<(), Error> {
     let _ = db.cycle_b();
     Ok(())
 }
 
-fn cycle_b(db: &mut impl Database) -> Result<(), Error> {
+fn cycle_b(db: &dyn Database) -> Result<(), Error> {
     db.cycle_leaf();
     let _ = db.cycle_a();
     Ok(())
 }
 
-fn cycle_c(db: &mut impl Database) -> Result<(), Error> {
+fn cycle_c(db: &dyn Database) -> Result<(), Error> {
     db.cycle_b()
 }
 

@@ -28,7 +28,7 @@ trait RequestParser {
 }
 // ANCHOR_END: request
 
-fn parse(_db: &impl RequestParser) -> ParsedResult {
+fn parse(_db: &dyn RequestParser) -> ParsedResult {
     panic!()
 }
 

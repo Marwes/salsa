@@ -24,37 +24,35 @@ trait StressDatabase: salsa::Database {
     fn c(&self, key: usize) -> Cancelable<usize>;
 }
 
-fn b(db: &mut impl StressDatabase, key: usize) -> Cancelable<usize> {
-    if db.salsa_runtime_mut().is_current_revision_canceled() {
+fn b(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
+    if db.salsa_runtime().is_current_revision_canceled() {
         return Err(Canceled);
     }
     Ok(db.a(key))
 }
 
-fn c(db: &mut impl StressDatabase, key: usize) -> Cancelable<usize> {
+fn c(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
     db.b(key)
 }
 
 #[salsa::database(Stress)]
 #[derive(Default)]
 struct StressDatabaseImpl {
-    runtime: salsa::Runtime<StressDatabaseImpl>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for StressDatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<StressDatabaseImpl> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<StressDatabaseImpl> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for StressDatabaseImpl {}
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {
     fn snapshot(&self) -> Snapshot<StressDatabaseImpl> {
         Snapshot::new(StressDatabaseImpl {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
+        })
+    }
+
+    fn fork(&self, forker: salsa::ForkState) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            storage: self.storage.fork(forker),
         })
     }
     fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
@@ -174,13 +172,13 @@ impl ReadOp {
             },
             ReadOp::Gc(query, strategy) => match query {
                 Query::A => {
-                    db.query(AQuery).sweep(strategy);
+                    AQuery.in_db(db).sweep(strategy);
                 }
                 Query::B => {
-                    db.query(BQuery).sweep(strategy);
+                    BQuery.in_db(db).sweep(strategy);
                 }
                 Query::C => {
-                    db.query(CQuery).sweep(strategy);
+                    CQuery.in_db(db).sweep(strategy);
                 }
             },
             ReadOp::GcAll(strategy) => {

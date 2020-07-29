@@ -8,19 +8,11 @@ use gluon_salsa as salsa;
 #[salsa::database(group::Gc, interned::Intern, volatile_tests::Volatile)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
     log: Log,
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<DatabaseImpl> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}
 
 impl DatabaseImpl {
     pub(crate) fn clear_log(&self) {
